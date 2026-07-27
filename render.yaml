@@ -13,9 +13,4 @@ services:
         generateValue: true
       - key: CORS_ORIGIN
         value: "*"   # replace with your deployed frontend URL once you have it
-      - key: DB_PATH
-        value: /data/pg_rent.db
-    disk:
-      name: pg-rent-data
-      mountPath: /data
-      sizeGB: 1
+     
