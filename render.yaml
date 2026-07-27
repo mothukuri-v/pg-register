@@ -1,0 +1,21 @@
+# Render.com blueprint — https://render.com/docs/blueprint-spec
+# In the Render dashboard: New -> Blueprint -> point at this repo, it will read this file.
+services:
+  - type: web
+    name: pg-rent-manager-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: "*"   # replace with your deployed frontend URL once you have it
+      - key: DB_PATH
+        value: /data/pg_rent.db
+    disk:
+      name: pg-rent-data
+      mountPath: /data
+      sizeGB: 1
