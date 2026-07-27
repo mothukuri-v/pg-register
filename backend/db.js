@@ -1,23 +1,20 @@
-import Database from "better-sqlite3";
+import { createClient } from "@libsql/client";
+import bcrypt from "bcryptjs";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// On most hosts the app's code directory is wiped/replaced on every deploy,
-// so in production point DB_PATH at a mounted persistent disk (e.g. Render
-// disks, Railway volumes) so tenant data survives redeploys.
-const dbPath = process.env.DB_PATH || path.join(__dirname, "pg_rent.db");
-fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+// Local dev (no env vars set): a plain SQLite file next to this code, same as before.
+// Production (Turso): set TURSO_DATABASE_URL + TURSO_AUTH_TOKEN and it talks to your
+// hosted database instead — same SQL, same schema, data now survives redeploys/restarts.
+const url = process.env.TURSO_DATABASE_URL || `file:${path.join(__dirname, "pg_rent.db")}`;
+const authToken = process.env.TURSO_AUTH_TOKEN;
 
-const db = new Database(dbPath);
-
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+const db = createClient(authToken ? { url, authToken } : { url });
 
 // ---------- SCHEMA (raw SQL) ----------
-db.exec(`
+await db.executeMultiple(`
 CREATE TABLE IF NOT EXISTS tenants (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   name          TEXT NOT NULL,
@@ -55,11 +52,14 @@ CREATE TABLE IF NOT EXISTS users (
 
 // Seed a default admin user on first run so the app is usable immediately.
 // The owner should change this password after first login (see PUT /api/auth/password).
-import bcrypt from "bcryptjs";
-const userCount = db.prepare("SELECT COUNT(*) AS n FROM users").get().n;
+const userCountResult = await db.execute("SELECT COUNT(*) AS n FROM users");
+const userCount = Number(userCountResult.rows[0].n);
 if (userCount === 0) {
   const hash = bcrypt.hashSync("admin123", 10);
-  db.prepare("INSERT INTO users (username, password_hash) VALUES (?, ?)").run("admin", hash);
+  await db.execute({
+    sql: "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+    args: ["admin", hash],
+  });
   console.log('Seeded default login -> username: "admin"  password: "admin123" (please change this)');
 }
 

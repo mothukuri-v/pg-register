@@ -6,6 +6,22 @@ import db from "./db.js";
 import { addOneMonth, cycleLabelFromDue, computeStatus, todayStr, daysUntil } from "./dateUtils.js";
 import { signToken, authMiddleware } from "./auth.js";
 
+// ---------------------------------------------------------------------------
+// Small helpers around @libsql/client so route code reads like plain SQL.
+// ---------------------------------------------------------------------------
+async function get(sql, args = []) {
+  const rs = await db.execute({ sql, args });
+  return rs.rows[0] || null;
+}
+async function all(sql, args = []) {
+  const rs = await db.execute({ sql, args });
+  return rs.rows;
+}
+async function run(sql, args = []) {
+  const rs = await db.execute({ sql, args });
+  return { lastInsertRowid: Number(rs.lastInsertRowid ?? 0), changes: Number(rs.rowsAffected ?? 0) };
+}
+
 const app = express();
 
 // In production, set CORS_ORIGIN to your deployed frontend URL (comma-separate
@@ -20,9 +36,9 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 // ---------------------------------------------------------------------------
 // Auth (public routes)
 // ---------------------------------------------------------------------------
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+  const user = await get("SELECT * FROM users WHERE username = ?", [username]);
   if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
     return res.status(401).json({ error: "Invalid username or password" });
   }
@@ -32,16 +48,16 @@ app.post("/api/auth/login", (req, res) => {
 // Everything below this line requires a valid login.
 app.use("/api", authMiddleware);
 
-app.put("/api/auth/password", (req, res) => {
+app.put("/api/auth/password", async (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.sub);
+  const user = await get("SELECT * FROM users WHERE id = ?", [req.user.sub]);
   if (!bcrypt.compareSync(currentPassword || "", user.password_hash)) {
     return res.status(401).json({ error: "Current password is incorrect" });
   }
   if (!newPassword || newPassword.length < 6) {
     return res.status(400).json({ error: "New password must be at least 6 characters" });
   }
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(newPassword, 10), user.id);
+  await run("UPDATE users SET password_hash = ? WHERE id = ?", [bcrypt.hashSync(newPassword, 10), user.id]);
   res.json({ success: true });
 });
 
@@ -53,52 +69,49 @@ app.put("/api/auth/password", (req, res) => {
 // record stays in history untouched, a brand-new pending row appears for
 // the new month.
 // ---------------------------------------------------------------------------
-function ensureCurrentCycle(tenantId) {
-  const tenant = db.prepare("SELECT * FROM tenants WHERE id = ?").get(tenantId);
+async function ensureCurrentCycle(tenantId) {
+  const tenant = await get("SELECT * FROM tenants WHERE id = ?", [tenantId]);
   if (!tenant || !tenant.is_active) return;
 
   const today = todayStr();
   let dueDate = tenant.next_due_date;
 
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO payments (tenant_id, cycle_label, due_date, amount_due, amount_paid)
-    VALUES (?, ?, ?, ?, 0)
-  `);
-  const updateNextDue = db.prepare("UPDATE tenants SET next_due_date = ? WHERE id = ?");
+  const insertCycle = (due) =>
+    run(
+      `INSERT OR IGNORE INTO payments (tenant_id, cycle_label, due_date, amount_due, amount_paid)
+       VALUES (?, ?, ?, ?, 0)`,
+      [tenantId, cycleLabelFromDue(due), due, tenant.rent_amount]
+    );
 
   // Make sure a row exists for the current due date.
-  insert.run(tenantId, cycleLabelFromDue(dueDate), dueDate, tenant.rent_amount);
+  await insertCycle(dueDate);
 
   // Roll forward while the due date is in the past (covers server downtime).
   while (dueDate < today) {
     dueDate = addOneMonth(dueDate);
-    insert.run(tenantId, cycleLabelFromDue(dueDate), dueDate, tenant.rent_amount);
-    updateNextDue.run(dueDate, tenantId);
+    await insertCycle(dueDate);
+    await run("UPDATE tenants SET next_due_date = ? WHERE id = ?", [dueDate, tenantId]);
   }
 }
 
-function ensureAllCycles() {
-  const ids = db.prepare("SELECT id FROM tenants WHERE is_active = 1").all();
-  for (const { id } of ids) ensureCurrentCycle(id);
+async function ensureAllCycles() {
+  const rows = await all("SELECT id FROM tenants WHERE is_active = 1");
+  for (const { id } of rows) await ensureCurrentCycle(id);
 }
 
 // Run once at boot, then every day just after midnight.
-ensureAllCycles();
+await ensureAllCycles();
 cron.schedule("5 0 * * *", ensureAllCycles);
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function currentPaymentFor(tenantId) {
-  return db
-    .prepare(
-      `SELECT * FROM payments WHERE tenant_id = ? ORDER BY due_date DESC LIMIT 1`
-    )
-    .get(tenantId);
+async function currentPaymentFor(tenantId) {
+  return get(`SELECT * FROM payments WHERE tenant_id = ? ORDER BY due_date DESC LIMIT 1`, [tenantId]);
 }
 
-function serializeTenant(tenant) {
-  const payment = currentPaymentFor(tenant.id);
+async function serializeTenant(tenant) {
+  const payment = await currentPaymentFor(tenant.id);
   const status = payment ? computeStatus(payment) : "pending";
   return {
     id: tenant.id,
@@ -128,14 +141,12 @@ function serializeTenant(tenant) {
 // ---------------------------------------------------------------------------
 // Routes: Tenants
 // ---------------------------------------------------------------------------
-app.get("/api/tenants", (req, res) => {
-  ensureAllCycles();
+app.get("/api/tenants", async (req, res) => {
+  await ensureAllCycles();
   const { status, search, upcomingDays, room } = req.query;
 
-  let tenants = db
-    .prepare("SELECT * FROM tenants WHERE is_active = 1 ORDER BY name COLLATE NOCASE")
-    .all()
-    .map(serializeTenant);
+  const tenantRows = await all("SELECT * FROM tenants WHERE is_active = 1 ORDER BY name COLLATE NOCASE");
+  let tenants = await Promise.all(tenantRows.map(serializeTenant));
 
   if (search) {
     const s = search.toLowerCase();
@@ -160,7 +171,7 @@ app.get("/api/tenants", (req, res) => {
   res.json(tenants);
 });
 
-app.post("/api/tenants", (req, res) => {
+app.post("/api/tenants", async (req, res) => {
   const { name, phone, room_no, joining_date, rent_amount } = req.body;
   if (!name || !room_no || !joining_date || !rent_amount) {
     return res.status(400).json({ error: "name, room_no, joining_date and rent_amount are required" });
@@ -168,105 +179,97 @@ app.post("/api/tenants", (req, res) => {
 
   const firstDueDate = addOneMonth(joining_date);
 
-  const tx = db.transaction(() => {
-    const info = db
-      .prepare(
-        `INSERT INTO tenants (name, phone, room_no, joining_date, rent_amount, next_due_date)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .run(name, phone || "", room_no, joining_date, rent_amount, firstDueDate);
+  const info = await run(
+    `INSERT INTO tenants (name, phone, room_no, joining_date, rent_amount, next_due_date)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [name, phone || "", room_no, joining_date, rent_amount, firstDueDate]
+  );
 
-    db.prepare(
-      `INSERT INTO payments (tenant_id, cycle_label, due_date, amount_due, amount_paid)
-       VALUES (?, ?, ?, ?, 0)`
-    ).run(info.lastInsertRowid, cycleLabelFromDue(firstDueDate), firstDueDate, rent_amount);
+  await run(
+    `INSERT INTO payments (tenant_id, cycle_label, due_date, amount_due, amount_paid)
+     VALUES (?, ?, ?, ?, 0)`,
+    [info.lastInsertRowid, cycleLabelFromDue(firstDueDate), firstDueDate, rent_amount]
+  );
 
-    return info.lastInsertRowid;
-  });
-
-  const id = tx();
-  const tenant = db.prepare("SELECT * FROM tenants WHERE id = ?").get(id);
-  res.status(201).json(serializeTenant(tenant));
+  const tenant = await get("SELECT * FROM tenants WHERE id = ?", [info.lastInsertRowid]);
+  res.status(201).json(await serializeTenant(tenant));
 });
 
 // Accepts rows already parsed on the frontend (from a pasted Excel selection
 // or an uploaded .xlsx/.csv file): [{ name, phone, room_no, joining_date, rent_amount }, ...]
-app.post("/api/tenants/bulk-import", (req, res) => {
+app.post("/api/tenants/bulk-import", async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   if (rows.length === 0) return res.status(400).json({ error: "No rows to import" });
 
-  const insertTenant = db.prepare(
-    `INSERT INTO tenants (name, phone, room_no, joining_date, rent_amount, next_due_date)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  );
-  const insertPayment = db.prepare(
-    `INSERT INTO payments (tenant_id, cycle_label, due_date, amount_due, amount_paid)
-     VALUES (?, ?, ?, ?, 0)`
-  );
-
   const results = { created: 0, failed: [] };
 
-  const tx = db.transaction(() => {
-    rows.forEach((row, idx) => {
-      const name = String(row.name || "").trim();
-      const room_no = String(row.room_no || "").trim();
-      const joining_date = String(row.joining_date || "").trim();
-      const rent_amount = Number(row.rent_amount);
-      const phone = row.phone ? String(row.phone).trim() : "";
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const rowNum = idx + 1;
+    const name = String(row.name || "").trim();
+    const room_no = String(row.room_no || "").trim();
+    const joining_date = String(row.joining_date || "").trim();
+    const rent_amount = Number(row.rent_amount);
+    const phone = row.phone ? String(row.phone).trim() : "";
 
-      const rowNum = idx + 1;
-      if (!name) return results.failed.push({ row: rowNum, reason: "Missing name" });
-      if (!room_no) return results.failed.push({ row: rowNum, reason: "Missing room no." });
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(joining_date)) {
-        return results.failed.push({ row: rowNum, reason: `Bad joining date "${row.joining_date}" (expected YYYY-MM-DD)` });
-      }
-      if (!rent_amount || rent_amount <= 0) {
-        return results.failed.push({ row: rowNum, reason: `Bad rent amount "${row.rent_amount}"` });
-      }
+    if (!name) { results.failed.push({ row: rowNum, reason: "Missing name" }); continue; }
+    if (!room_no) { results.failed.push({ row: rowNum, reason: "Missing room no." }); continue; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(joining_date)) {
+      results.failed.push({ row: rowNum, reason: `Bad joining date "${row.joining_date}" (expected YYYY-MM-DD)` });
+      continue;
+    }
+    if (!rent_amount || rent_amount <= 0) {
+      results.failed.push({ row: rowNum, reason: `Bad rent amount "${row.rent_amount}"` });
+      continue;
+    }
 
-      try {
-        const firstDueDate = addOneMonth(joining_date);
-        const info = insertTenant.run(name, phone, room_no, joining_date, rent_amount, firstDueDate);
-        insertPayment.run(info.lastInsertRowid, cycleLabelFromDue(firstDueDate), firstDueDate, rent_amount);
-        results.created += 1;
-      } catch (e) {
-        results.failed.push({ row: rowNum, reason: e.message });
-      }
-    });
-  });
-  tx();
+    try {
+      const firstDueDate = addOneMonth(joining_date);
+      const info = await run(
+        `INSERT INTO tenants (name, phone, room_no, joining_date, rent_amount, next_due_date)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [name, phone, room_no, joining_date, rent_amount, firstDueDate]
+      );
+      await run(
+        `INSERT INTO payments (tenant_id, cycle_label, due_date, amount_due, amount_paid)
+         VALUES (?, ?, ?, ?, 0)`,
+        [info.lastInsertRowid, cycleLabelFromDue(firstDueDate), firstDueDate, rent_amount]
+      );
+      results.created += 1;
+    } catch (e) {
+      results.failed.push({ row: rowNum, reason: e.message });
+    }
+  }
 
   res.json(results);
 });
 
-app.put("/api/tenants/:id", (req, res) => {
+app.put("/api/tenants/:id", async (req, res) => {
   const { id } = req.params;
-  const tenant = db.prepare("SELECT * FROM tenants WHERE id = ?").get(id);
+  const tenant = await get("SELECT * FROM tenants WHERE id = ?", [id]);
   if (!tenant) return res.status(404).json({ error: "Tenant not found" });
 
   const { name, phone, room_no, rent_amount } = req.body;
-  db.prepare(
-    `UPDATE tenants SET name = ?, phone = ?, room_no = ?, rent_amount = ? WHERE id = ?`
-  ).run(
+  await run(`UPDATE tenants SET name = ?, phone = ?, room_no = ?, rent_amount = ? WHERE id = ?`, [
     name ?? tenant.name,
     phone ?? tenant.phone,
     room_no ?? tenant.room_no,
     rent_amount ?? tenant.rent_amount,
-    id
-  );
+    id,
+  ]);
 
   // Keep the open (unpaid) current cycle's amount_due in sync with a rent change.
-  const payment = currentPaymentFor(id);
+  const payment = await currentPaymentFor(id);
   if (payment && payment.amount_paid === 0 && rent_amount) {
-    db.prepare("UPDATE payments SET amount_due = ? WHERE id = ?").run(rent_amount, payment.id);
+    await run("UPDATE payments SET amount_due = ? WHERE id = ?", [rent_amount, payment.id]);
   }
 
-  res.json(serializeTenant(db.prepare("SELECT * FROM tenants WHERE id = ?").get(id)));
+  res.json(await serializeTenant(await get("SELECT * FROM tenants WHERE id = ?", [id])));
 });
 
-app.delete("/api/tenants/:id", (req, res) => {
+app.delete("/api/tenants/:id", async (req, res) => {
   const { id } = req.params;
-  const info = db.prepare("DELETE FROM tenants WHERE id = ?").run(id);
+  const info = await run("DELETE FROM tenants WHERE id = ?", [id]);
   if (info.changes === 0) return res.status(404).json({ error: "Tenant not found" });
   res.json({ success: true });
 });
@@ -274,40 +277,33 @@ app.delete("/api/tenants/:id", (req, res) => {
 // ---------------------------------------------------------------------------
 // Routes: Payments
 // ---------------------------------------------------------------------------
-app.post("/api/payments/:paymentId/pay", (req, res) => {
+app.post("/api/payments/:paymentId/pay", async (req, res) => {
   const { paymentId } = req.params;
   const { amount } = req.body;
-  const payment = db.prepare("SELECT * FROM payments WHERE id = ?").get(paymentId);
+  const payment = await get("SELECT * FROM payments WHERE id = ?", [paymentId]);
   if (!payment) return res.status(404).json({ error: "Payment record not found" });
 
   const amt = Number(amount);
   if (!amt || amt <= 0) return res.status(400).json({ error: "amount must be a positive number" });
 
   const newPaid = Math.min(payment.amount_due, payment.amount_paid + amt);
-  db.prepare(
-    `UPDATE payments SET amount_paid = ?, paid_date = ? WHERE id = ?`
-  ).run(newPaid, todayStr(), paymentId);
+  await run(`UPDATE payments SET amount_paid = ?, paid_date = ? WHERE id = ?`, [newPaid, todayStr(), paymentId]);
 
-  res.json(serializeTenant(db.prepare("SELECT * FROM tenants WHERE id = ?").get(payment.tenant_id)));
+  res.json(await serializeTenant(await get("SELECT * FROM tenants WHERE id = ?", [payment.tenant_id])));
 });
 
-app.get("/api/tenants/:id/history", (req, res) => {
-  const rows = db
-    .prepare("SELECT * FROM payments WHERE tenant_id = ? ORDER BY due_date DESC")
-    .all(req.params.id)
-    .map((p) => ({ ...p, status: computeStatus(p) }));
-  res.json(rows);
+app.get("/api/tenants/:id/history", async (req, res) => {
+  const rows = await all("SELECT * FROM payments WHERE tenant_id = ? ORDER BY due_date DESC", [req.params.id]);
+  res.json(rows.map((p) => ({ ...p, status: computeStatus(p) })));
 });
 
 // ---------------------------------------------------------------------------
 // Dashboard summary
 // ---------------------------------------------------------------------------
-app.get("/api/dashboard", (req, res) => {
-  ensureAllCycles();
-  const tenants = db
-    .prepare("SELECT * FROM tenants WHERE is_active = 1")
-    .all()
-    .map(serializeTenant);
+app.get("/api/dashboard", async (req, res) => {
+  await ensureAllCycles();
+  const tenantRows = await all("SELECT * FROM tenants WHERE is_active = 1");
+  const tenants = await Promise.all(tenantRows.map(serializeTenant));
 
   const summary = {
     total_tenants: tenants.length,

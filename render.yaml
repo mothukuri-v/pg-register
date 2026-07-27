@@ -1,5 +1,10 @@
 # Render.com blueprint — https://render.com/docs/blueprint-spec
 # In the Render dashboard: New -> Blueprint -> point at this repo, it will read this file.
+#
+# After the first deploy, go to Render -> this service -> Environment, and add
+# TURSO_DATABASE_URL and TURSO_AUTH_TOKEN (see DEPLOY.md) so tenant data
+# persists across redeploys. Without them the app falls back to a local
+# SQLite file that resets whenever the free-tier instance restarts.
 services:
   - type: web
     name: pg-rent-manager-api
@@ -13,4 +18,3 @@ services:
         generateValue: true
       - key: CORS_ORIGIN
         value: "*"   # replace with your deployed frontend URL once you have it
-     

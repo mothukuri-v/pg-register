@@ -1,6 +1,6 @@
 # PG Rent Register
 
-A full-stack rent management app for a PG (paying-guest) house: React frontend, Node/Express backend, SQLite database (plain SQL underneath — swap the connection string for MySQL/Postgres later if you outgrow SQLite).
+A full-stack rent management app for a PG (paying-guest) house: React frontend, Node/Express backend, SQLite-compatible database (plain SQL — runs on a local file for development, and on [Turso](https://turso.tech) for production so data survives redeploys; see [DEPLOY.md](./DEPLOY.md)).
 
 ## What it does
 
@@ -18,7 +18,7 @@ A full-stack rent management app for a PG (paying-guest) house: React frontend, 
 
 ```
 pg-rent-manager/
-├── backend/            Express API + SQLite (better-sqlite3)
+├── backend/            Express API + libSQL (SQLite-compatible; local file or Turso)
 │   ├── server.js        routes, auto-rollover logic
 │   ├── db.js             SQL schema (tenants, payments tables)
 │   └── dateUtils.js     date/status helpers
@@ -71,7 +71,7 @@ cd backend
 npm install
 npm start        # http://localhost:4000
 ```
-The SQLite file `pg_rent.db` is created automatically on first run — no separate database setup needed.
+The SQLite file `pg_rent.db` is created automatically on first run — no separate database setup needed for local development. In production, set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` (see [DEPLOY.md](./DEPLOY.md)) and it talks to a hosted Turso database instead, so data survives redeploys.
 
 **Frontend** (in a second terminal)
 ```bash
@@ -99,6 +99,6 @@ The frontend reads the API URL from `frontend/.env` (`VITE_API_URL`), already se
 
 All routes except `/api/auth/login` require `Authorization: Bearer <token>`, obtained from the login response and sent automatically by the frontend once you sign in.
 
-## Moving to MySQL/Postgres later
+## Where tenant data lives
 
-The schema is plain SQL and the queries in `server.js`/`db.js` use standard syntax, so migrating means: swap `better-sqlite3` for `pg`/`mysql2`, adjust the `AUTOINCREMENT`/`datetime('now')` dialect differences, and point at your connection string. Everything else (routes, frontend) stays the same.
+Locally, it's a plain SQLite file at `backend/pg_rent.db`. In production (see [DEPLOY.md](./DEPLOY.md)), it's a [Turso](https://turso.tech) database — same schema, same SQL, just accessed over the network instead of a local file, via `@libsql/client`. This is what keeps tenant data intact across backend redeploys and restarts on free hosting tiers that don't offer persistent disks.
