@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { api, auth, setUnauthorizedHandler } from "./api.js";
 import Login from "./components/Login.jsx";
 import Dashboard from "./components/Dashboard.jsx";
@@ -17,8 +18,18 @@ export default function App() {
     });
   }, []);
 
-  if (!loggedIn) return <Login onLoggedIn={() => setLoggedIn(true)} />;
-  return <Ledger onLogout={() => { auth.logout(); setLoggedIn(false); }} />;
+  if (!loggedIn) return (
+    <>
+      <Login onLoggedIn={() => setLoggedIn(true)} />
+      <SpeedInsights />
+    </>
+  );
+  return (
+    <>
+      <Ledger onLogout={() => { auth.logout(); setLoggedIn(false); }} />
+      <SpeedInsights />
+    </>
+  );
 }
 
 function Ledger({ onLogout }) {
