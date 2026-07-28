@@ -1,3 +1,7 @@
+// On Vercel, the backend now lives in this same project (frontend/api), so the
+// default is just a relative path — same domain, no CORS, nothing to configure.
+// For local development, frontend/.env sets VITE_API_URL to the standalone
+// backend at http://localhost:4000/api instead.
 const BASE = import.meta.env.VITE_API_URL || "/api";
 
 function getToken() {
