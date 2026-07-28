@@ -154,7 +154,7 @@ app.get("/api/tenants", async (req, res) => {
   await ensureAllCyclesIfNeeded();
   const { status, search, upcomingDays, room } = req.query;
 
-  const tenantRows = await all("SELECT * FROM tenants WHERE is_active = 1 ORDER BY name COLLATE NOCASE");
+  const tenantRows = await all("SELECT * FROM tenants WHERE is_active = 1 ORDER BY room_no COLLATE NOCASE, name COLLATE NOCASE");
   let tenants = await Promise.all(tenantRows.map(serializeTenant));
 
   if (search) {
