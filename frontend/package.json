@@ -9,7 +9,13 @@
     "lint": "oxlint",
     "preview": "vite preview"
   },
+  "engines": { "node": "20.x" },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "xlsx": "^0.18.5"
