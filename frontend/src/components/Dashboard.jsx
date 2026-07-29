@@ -3,9 +3,11 @@ const fmt = (n) =>
 
 function Stat({ label, value, accent }) {
   return (
-    <div className="flex-1 min-w-[150px] bg-ink-800 border border-ink-600/40 rounded-lg px-5 py-4">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-paper/50 font-body mb-1.5">{label}</p>
-      <p className={`font-mono text-2xl font-semibold ${accent}`}>{value}</p>
+    <div className="bg-ink-800 border border-ink-600/40 rounded-lg px-4 py-3.5">
+      <p className="text-[10px] sm:text-[11px] uppercase tracking-[0.12em] text-paper/50 font-body mb-1.5 leading-tight">
+        {label}
+      </p>
+      <p className={`font-mono text-xl sm:text-2xl font-semibold ${accent}`}>{value}</p>
     </div>
   );
 }
@@ -13,7 +15,7 @@ function Stat({ label, value, accent }) {
 export default function Dashboard({ data }) {
   if (!data) return null;
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5 sm:gap-3">
       <Stat label="Tenants" value={data.total_tenants} accent="text-paper" />
       <Stat label="Collected this cycle" value={fmt(data.collected_this_cycle)} accent="text-sage-light" />
       <Stat label="Outstanding" value={fmt(data.pending_amount)} accent="text-rust-light" />
