@@ -15,9 +15,8 @@ function Stat({ label, value, accent }) {
 export default function Dashboard({ data }) {
   if (!data) return null;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5 sm:gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
       <Stat label="Tenants" value={data.total_tenants} accent="text-paper" />
-      <Stat label="Collected this cycle" value={fmt(data.collected_this_cycle)} accent="text-sage-light" />
       <Stat label="Outstanding" value={fmt(data.pending_amount)} accent="text-rust-light" />
       <Stat label="Paid" value={data.paid_count} accent="text-sage-light" />
       <Stat label="Pending / Partial" value={data.pending_count + data.partial_count} accent="text-brass-light" />
