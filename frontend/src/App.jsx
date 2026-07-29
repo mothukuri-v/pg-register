@@ -88,30 +88,27 @@ function Ledger({ onLogout }) {
   return (
     <div className="min-h-screen bg-ink-900">
       <header className="border-b border-ink-600/40">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-2xl md:text-3xl font-semibold text-paper tracking-tight">
-              Narayana PG Rent Register
-            </h1>
-            <p className="text-paper/50 text-xs font-body mt-1">
-              A running ledger of every tenant's rent, dues and payment history
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="hidden sm:block font-mono text-xs text-paper/40">
-              {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="text-paper/60 text-xs font-body">{auth.getUsername()}</span>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 sm:py-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="font-display text-lg sm:text-3xl font-semibold text-paper tracking-tight leading-tight">
+                Narayana PG Rent Register
+              </h1>
+              <p className="hidden sm:block text-paper/50 text-xs font-body mt-1">
+                A running ledger of every tenant's rent, dues and payment history
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 pt-0.5 sm:pt-0">
+              <span className="hidden md:inline text-paper/60 text-xs font-body">{auth.getUsername()}</span>
               <button
                 onClick={() => setShowPassword(true)}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded bg-paper/10 text-paper/70 hover:bg-paper/20 transition-colors"
+                className="text-[11px] sm:text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded bg-paper/10 text-paper/70 hover:bg-paper/20 transition-colors whitespace-nowrap"
               >
-                Change password
+                Password
               </button>
               <button
                 onClick={onLogout}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded bg-paper/10 text-paper/70 hover:bg-paper/20 transition-colors"
+                className="text-[11px] sm:text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded bg-paper/10 text-paper/70 hover:bg-paper/20 transition-colors whitespace-nowrap"
               >
                 Log out
               </button>
