@@ -1,7 +1,3 @@
-// On Vercel, the backend now lives in this same project (frontend/api), so the
-// default is just a relative path — same domain, no CORS, nothing to configure.
-// For local development, frontend/.env sets VITE_API_URL to the standalone
-// backend at http://localhost:4000/api instead.
 const BASE = import.meta.env.VITE_API_URL || "/api";
 
 function getToken() {
@@ -42,9 +38,13 @@ export const auth = {
   saveToken: (token) => localStorage.setItem("pg_token", token),
   saveUsername: (u) => localStorage.setItem("pg_username", u),
   getUsername: () => localStorage.getItem("pg_username") || "",
+  saveRole: (r) => localStorage.setItem("pg_role", r || "admin"),
+  getRole: () => localStorage.getItem("pg_role") || "admin",
+  isReadOnly: () => localStorage.getItem("pg_role") === "viewer",
   logout: () => {
     localStorage.removeItem("pg_token");
     localStorage.removeItem("pg_username");
+    localStorage.removeItem("pg_role");
   },
 };
 
