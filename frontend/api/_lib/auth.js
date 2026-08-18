@@ -1,11 +1,9 @@
 import jwt from "jsonwebtoken";
 
-// JWT_SECRET is injected as an env var at runtime by Firebase (declared as a
-// secret in index.js). This fallback only kicks in for local emulator runs.
 const SECRET = process.env.JWT_SECRET || "pg-rent-register-dev-secret-change-me";
 
 export function signToken(user) {
-  return jwt.sign({ sub: user.id, username: user.username }, SECRET, { expiresIn: "7d" });
+  return jwt.sign({ sub: user.id, username: user.username, role: user.role }, SECRET, { expiresIn: "7d" });
 }
 
 export function authMiddleware(req, res, next) {
@@ -19,4 +17,13 @@ export function authMiddleware(req, res, next) {
   } catch {
     res.status(401).json({ error: "Session expired, please log in again" });
   }
+}
+
+// Blocks any request from a "viewer" (read-only) account. Apply this to
+// every route that creates, edits, or deletes data. GET routes don't need it.
+export function requireWrite(req, res, next) {
+  if (req.user?.role === "viewer") {
+    return res.status(403).json({ error: "This is a read-only account and can't make changes." });
+  }
+  next();
 }
