@@ -17,6 +17,12 @@ export default function Filters({ filters, setFilters, onAdd, rooms }) {
           down to a single character — they line up side by side from the sm
           breakpoint up, where there's enough room. */}
       <div className="flex flex-col sm:flex-row gap-2.5">
+        <select value={filters.building} onChange={set("building")} className={`${fieldCls} sm:w-auto`}>
+          <option value="all">All buildings</option>
+          <option value="new">New Building (101, 102…)</option>
+          <option value="old">Old Building (101A, 102A…)</option>
+        </select>
+
         <select value={filters.status} onChange={set("status")} className={`${fieldCls} sm:w-auto`}>
           <option value="all">All statuses</option>
           <option value="paid">Paid</option>
