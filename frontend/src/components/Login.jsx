@@ -12,9 +12,10 @@ export default function Login({ onLoggedIn }) {
     setError("");
     setLoading(true);
     try {
-      const { token, username: u } = await auth.login(username.trim(), password);
+      const { token, username: u, role } = await auth.login(username.trim(), password);
       auth.saveToken(token);
       auth.saveUsername(u);
+      auth.saveRole(role);
       onLoggedIn();
     } catch (err) {
       setError(err.message || "Could not log in");
