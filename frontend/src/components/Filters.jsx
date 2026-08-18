@@ -1,4 +1,4 @@
-export default function Filters({ filters, setFilters, onAdd, rooms }) {
+export default function Filters({ filters, setFilters, onAdd, rooms, canWrite = true }) {
   const set = (key) => (e) => setFilters((f) => ({ ...f, [key]: e.target.value }));
 
   const fieldCls =
@@ -49,12 +49,14 @@ export default function Filters({ filters, setFilters, onAdd, rooms }) {
         </select>
       </div>
 
-      <button
-        onClick={onAdd}
-        className="w-full sm:w-auto sm:ml-auto sm:block bg-brass hover:bg-brass-light text-ink-900 font-semibold text-sm px-4 py-2.5 sm:py-2 rounded-md transition-colors shadow-sm"
-      >
-        + Add Tenant
-      </button>
+      {canWrite && (
+        <button
+          onClick={onAdd}
+          className="w-full sm:w-auto sm:ml-auto sm:block bg-brass hover:bg-brass-light text-ink-900 font-semibold text-sm px-4 py-2.5 sm:py-2 rounded-md transition-colors shadow-sm"
+        >
+          + Add Tenant
+        </button>
+      )}
     </div>
   );
 }
