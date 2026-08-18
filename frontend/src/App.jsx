@@ -29,6 +29,8 @@ export default function App() {
 }
 
 function Ledger({ onLogout }) {
+  const canWrite = !auth.isReadOnly();
+
   const [tenants, setTenants] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -121,6 +123,11 @@ function Ledger({ onLogout }) {
             </div>
             <div className="flex items-center gap-2 shrink-0 pt-0.5 sm:pt-0">
               <span className="hidden md:inline text-paper/60 text-xs font-body">{auth.getUsername()}</span>
+              {!canWrite && (
+                <span className="text-[11px] font-semibold px-2 py-1 rounded bg-brass/15 text-brass-light whitespace-nowrap">
+                  Read-only
+                </span>
+              )}
               <button
                 onClick={() => setShowPassword(true)}
                 className="text-[11px] sm:text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded bg-paper/10 text-paper/70 hover:bg-paper/20 transition-colors whitespace-nowrap"
@@ -151,6 +158,7 @@ function Ledger({ onLogout }) {
           onAdd={() => setShowForm(true)}
           onImport={() => setShowImport(true)}
           rooms={rooms}
+          canWrite={canWrite}
         />
 
         <TenantTable
@@ -159,6 +167,7 @@ function Ledger({ onLogout }) {
           onPay={setPayTenant}
           onEdit={setEditTenant}
           onDelete={setDeleteTenant}
+          canWrite={canWrite}
         />
 
         <p className="text-paper/30 text-xs font-body text-center pt-2">
