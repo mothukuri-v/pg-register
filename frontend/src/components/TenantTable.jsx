@@ -23,13 +23,7 @@ function EmptyState() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Mobile: one card per tenant. A wide table forced onto a phone means
-// horizontal scrolling with columns sliced off — a card stacks everything
-// vertically instead, so nothing gets cut off and every action is a full-width
-// tap target.
-// ---------------------------------------------------------------------------
-function TenantCard({ tenant, onPay, onEdit, onDelete }) {
+function TenantCard({ tenant, onPay, onEdit, onDelete, canWrite }) {
   const p = tenant.current_payment;
   return (
     <div className="bg-paper rounded-lg border border-paper-line p-4">
@@ -61,35 +55,34 @@ function TenantCard({ tenant, onPay, onEdit, onDelete }) {
         <span className="text-rust">{fmt(p?.balance)} due</span>
       </div>
 
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => onPay(tenant)}
-          disabled={!p || p.balance <= 0}
-          className="flex-1 text-xs font-semibold py-2.5 rounded bg-sage/10 text-sage disabled:opacity-30 disabled:cursor-not-allowed active:bg-sage/20"
-        >
-          Record payment
-        </button>
-        <button
-          onClick={() => onEdit(tenant)}
-          className="text-xs font-semibold px-3.5 py-2.5 rounded bg-ink-700/10 text-ink-800 active:bg-ink-700/20"
-        >
-          Edit
-        </button>
-        <button
-          onClick={() => onDelete(tenant)}
-          className="text-xs font-semibold px-3.5 py-2.5 rounded bg-rust/10 text-rust active:bg-rust/20"
-        >
-          Delete
-        </button>
-      </div>
+      {canWrite && (
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => onPay(tenant)}
+            disabled={!p || p.balance <= 0}
+            className="flex-1 text-xs font-semibold py-2.5 rounded bg-sage/10 text-sage disabled:opacity-30 disabled:cursor-not-allowed active:bg-sage/20"
+          >
+            Record payment
+          </button>
+          <button
+            onClick={() => onEdit(tenant)}
+            className="text-xs font-semibold px-3.5 py-2.5 rounded bg-ink-700/10 text-ink-800 active:bg-ink-700/20"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => onDelete(tenant)}
+            className="text-xs font-semibold px-3.5 py-2.5 rounded bg-rust/10 text-rust active:bg-rust/20"
+          >
+            Delete
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Desktop: the ledger-style table.
-// ---------------------------------------------------------------------------
-function TenantDesktopTable({ tenants, onPay, onEdit, onDelete }) {
+function TenantDesktopTable({ tenants, onPay, onEdit, onDelete, canWrite }) {
   return (
     <div className="bg-paper rounded-lg border border-paper-line overflow-hidden">
       <div className="overflow-x-auto scrollbar-thin">
@@ -102,7 +95,7 @@ function TenantDesktopTable({ tenants, onPay, onEdit, onDelete }) {
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Next due</th>
               <th className="px-4 py-3 font-semibold whitespace-nowrap">Status</th>
               <th className="px-4 py-3 font-semibold text-right whitespace-nowrap">Paid / Balance</th>
-              <th className="px-5 py-3 font-semibold text-right whitespace-nowrap">Actions</th>
+              {canWrite && <th className="px-5 py-3 font-semibold text-right whitespace-nowrap">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -132,29 +125,31 @@ function TenantDesktopTable({ tenants, onPay, onEdit, onDelete }) {
                     <p className="font-mono text-sage text-xs">{fmt(p?.amount_paid)} paid</p>
                     <p className="font-mono text-rust text-xs">{fmt(p?.balance)} due</p>
                   </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        onClick={() => onPay(t)}
-                        disabled={!p || p.balance <= 0}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded bg-sage/10 text-sage hover:bg-sage/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                      >
-                        Record payment
-                      </button>
-                      <button
-                        onClick={() => onEdit(t)}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded bg-ink-700/10 text-ink-800 hover:bg-ink-700/20 transition-colors"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => onDelete(t)}
-                        className="text-xs font-semibold px-2.5 py-1.5 rounded bg-rust/10 text-rust hover:bg-rust/20 transition-colors"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+                  {canWrite && (
+                    <td className="px-5 py-3.5">
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          onClick={() => onPay(t)}
+                          disabled={!p || p.balance <= 0}
+                          className="text-xs font-semibold px-2.5 py-1.5 rounded bg-sage/10 text-sage hover:bg-sage/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                        >
+                          Record payment
+                        </button>
+                        <button
+                          onClick={() => onEdit(t)}
+                          className="text-xs font-semibold px-2.5 py-1.5 rounded bg-ink-700/10 text-ink-800 hover:bg-ink-700/20 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => onDelete(t)}
+                          className="text-xs font-semibold px-2.5 py-1.5 rounded bg-rust/10 text-rust hover:bg-rust/20 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -165,7 +160,7 @@ function TenantDesktopTable({ tenants, onPay, onEdit, onDelete }) {
   );
 }
 
-export default function TenantTable({ tenants, onPay, onEdit, onDelete, loading }) {
+export default function TenantTable({ tenants, onPay, onEdit, onDelete, loading, canWrite = true }) {
   if (loading) {
     return <div className="text-paper/60 text-sm py-10 text-center font-body">Loading ledger…</div>;
   }
@@ -176,16 +171,14 @@ export default function TenantTable({ tenants, onPay, onEdit, onDelete, loading 
 
   return (
     <>
-      {/* Mobile: stacked cards */}
       <div className="md:hidden space-y-3">
         {tenants.map((t) => (
-          <TenantCard key={t.id} tenant={t} onPay={onPay} onEdit={onEdit} onDelete={onDelete} />
+          <TenantCard key={t.id} tenant={t} onPay={onPay} onEdit={onEdit} onDelete={onDelete} canWrite={canWrite} />
         ))}
       </div>
 
-      {/* Desktop / tablet: table */}
       <div className="hidden md:block">
-        <TenantDesktopTable tenants={tenants} onPay={onPay} onEdit={onEdit} onDelete={onDelete} />
+        <TenantDesktopTable tenants={tenants} onPay={onPay} onEdit={onEdit} onDelete={onDelete} canWrite={canWrite} />
       </div>
     </>
   );
