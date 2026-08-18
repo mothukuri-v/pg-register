@@ -7,6 +7,13 @@ import TenantTable from "./components/TenantTable.jsx";
 import BulkImportModal from "./components/BulkImportModal.jsx";
 import { TenantFormModal, PayModal, ConfirmDialog, ChangePasswordModal } from "./components/Modals.jsx";
 
+// Building is derived from the room number itself, not stored separately:
+// "New Building" rooms are plain numbers (101, 102…), "Old Building" rooms
+// end with a letter (101A, 102A…). Adjust these two patterns here if your
+// numbering scheme ever changes — nothing else needs to change.
+const isNewBuildingRoom = (room) => /^\d+$/.test(room || "");
+const isOldBuildingRoom = (room) => /[A-Za-z]$/.test(room || "");
+
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(!!auth.getToken());
 
@@ -27,7 +34,13 @@ function Ledger({ onLogout }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  const [filters, setFilters] = useState({ search: "", status: "all", room: "", upcomingDays: "" });
+  const [filters, setFilters] = useState({
+    search: "",
+    status: "all",
+    room: "",
+    upcomingDays: "",
+    building: "all", // "all" | "new" | "old"
+  });
 
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -41,7 +54,15 @@ function Ledger({ onLogout }) {
     setErr("");
     try {
       const [list, dash] = await Promise.all([api.listTenants(filters), api.dashboard()]);
-      setTenants(list);
+
+      const buildingFiltered =
+        filters.building === "new"
+          ? list.filter((t) => isNewBuildingRoom(t.room_no))
+          : filters.building === "old"
+          ? list.filter((t) => isOldBuildingRoom(t.room_no))
+          : list;
+
+      setTenants(buildingFiltered);
       setSummary(dash);
     } catch (e) {
       setErr(e.message || "Could not reach the server. Is the backend running?");
