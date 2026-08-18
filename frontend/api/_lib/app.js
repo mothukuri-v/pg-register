@@ -3,11 +3,8 @@ import cors from "cors";
 import bcrypt from "bcryptjs";
 import db from "./db.js";
 import { addOneMonth, cycleLabelFromDue, computeStatus, todayStr, daysUntil } from "./dateUtils.js";
-import { signToken, authMiddleware } from "./auth.js";
+import { signToken, authMiddleware, requireWrite } from "./auth.js";
 
-// ---------------------------------------------------------------------------
-// Small helpers around @libsql/client so route code reads like plain SQL.
-// ---------------------------------------------------------------------------
 async function get(sql, args = []) {
   const rs = await db.execute({ sql, args });
   return rs.rows[0] || null;
@@ -23,17 +20,14 @@ async function run(sql, args = []) {
 
 const app = express();
 
-// In production, set CORS_ORIGIN to your deployed frontend URL (comma-separate
-// multiple). Left unset, it allows any origin, which is fine for local dev.
 const corsOrigin = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim()) : "*";
 app.use(cors({ origin: corsOrigin }));
-
-app.use(express.json({ limit: "5mb" })); // higher limit to accept pasted/bulk-imported spreadsheet data
+app.use(express.json({ limit: "5mb" }));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // ---------------------------------------------------------------------------
-// Auth (public routes)
+// Auth (public route)
 // ---------------------------------------------------------------------------
 app.post("/api/auth/login", async (req, res) => {
   const { username, password } = req.body;
@@ -41,12 +35,14 @@ app.post("/api/auth/login", async (req, res) => {
   if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
     return res.status(401).json({ error: "Invalid username or password" });
   }
-  res.json({ token: signToken(user), username: user.username });
+  res.json({ token: signToken(user), username: user.username, role: user.role });
 });
 
 // Everything below this line requires a valid login.
 app.use("/api", authMiddleware);
 
+// Password changes are allowed for any logged-in account, including
+// read-only ones — that's an account-security action, not a data write.
 app.put("/api/auth/password", async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const user = await get("SELECT * FROM users WHERE id = ?", [req.user.sub]);
@@ -61,17 +57,7 @@ app.put("/api/auth/password", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Core logic: make sure every active tenant has a payment row for the cycle
-// they are currently in. If today has rolled past a tenant's next_due_date,
-// a fresh "pending" cycle is auto-created and next_due_date advances one
-// month. This is the "auto reset" behaviour: last cycle's paid/pending
-// record stays in history untouched, a brand-new pending row appears for
-// the new month.
-//
-// Note: unlike the Render version, there's no background cron job here —
-// Cloud Functions don't keep a process running between requests. Instead
-// this check runs lazily on each incoming request (cached per calendar day
-// below), which covers the same behaviour without needing a scheduler.
+// Rollover logic (unchanged)
 // ---------------------------------------------------------------------------
 async function ensureCurrentCycle(tenantId) {
   const tenant = await get("SELECT * FROM tenants WHERE id = ?", [tenantId]);
@@ -87,10 +73,8 @@ async function ensureCurrentCycle(tenantId) {
       [tenantId, cycleLabelFromDue(due), due, tenant.rent_amount]
     );
 
-  // Make sure a row exists for the current due date.
   await insertCycle(dueDate);
 
-  // Roll forward while the due date is in the past (covers downtime).
   while (dueDate < today) {
     dueDate = addOneMonth(dueDate);
     await insertCycle(dueDate);
@@ -103,7 +87,6 @@ async function ensureAllCycles() {
   await Promise.all(rows.map(({ id }) => ensureCurrentCycle(id)));
 }
 
-// Only actually hit the database once per calendar day per warm instance.
 let lastEnsuredDate = null;
 async function ensureAllCyclesIfNeeded() {
   const today = todayStr();
@@ -112,9 +95,6 @@ async function ensureAllCyclesIfNeeded() {
   lastEnsuredDate = today;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 async function currentPaymentFor(tenantId) {
   return get(`SELECT * FROM payments WHERE tenant_id = ? ORDER BY due_date DESC LIMIT 1`, [tenantId]);
 }
@@ -148,7 +128,8 @@ async function serializeTenant(tenant) {
 }
 
 // ---------------------------------------------------------------------------
-// Routes: Tenants
+// Routes: Tenants — reads are open to any logged-in user, writes require
+// requireWrite (blocks "viewer" accounts).
 // ---------------------------------------------------------------------------
 app.get("/api/tenants", async (req, res) => {
   await ensureAllCyclesIfNeeded();
@@ -180,7 +161,7 @@ app.get("/api/tenants", async (req, res) => {
   res.json(tenants);
 });
 
-app.post("/api/tenants", async (req, res) => {
+app.post("/api/tenants", requireWrite, async (req, res) => {
   const { name, phone, room_no, joining_date, rent_amount } = req.body;
   if (!name || !room_no || !joining_date || !rent_amount) {
     return res.status(400).json({ error: "name, room_no, joining_date and rent_amount are required" });
@@ -204,9 +185,7 @@ app.post("/api/tenants", async (req, res) => {
   res.status(201).json(await serializeTenant(tenant));
 });
 
-// Accepts rows already parsed on the frontend (from a pasted Excel selection
-// or an uploaded .xlsx/.csv file): [{ name, phone, room_no, joining_date, rent_amount }, ...]
-app.post("/api/tenants/bulk-import", async (req, res) => {
+app.post("/api/tenants/bulk-import", requireWrite, async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
   if (rows.length === 0) return res.status(400).json({ error: "No rows to import" });
 
@@ -253,7 +232,7 @@ app.post("/api/tenants/bulk-import", async (req, res) => {
   res.json(results);
 });
 
-app.put("/api/tenants/:id", async (req, res) => {
+app.put("/api/tenants/:id", requireWrite, async (req, res) => {
   const { id } = req.params;
   const tenant = await get("SELECT * FROM tenants WHERE id = ?", [id]);
   if (!tenant) return res.status(404).json({ error: "Tenant not found" });
@@ -267,7 +246,6 @@ app.put("/api/tenants/:id", async (req, res) => {
     id,
   ]);
 
-  // Keep the open (unpaid) current cycle's amount_due in sync with a rent change.
   const payment = await currentPaymentFor(id);
   if (payment && payment.amount_paid === 0 && rent_amount) {
     await run("UPDATE payments SET amount_due = ? WHERE id = ?", [rent_amount, payment.id]);
@@ -276,7 +254,7 @@ app.put("/api/tenants/:id", async (req, res) => {
   res.json(await serializeTenant(await get("SELECT * FROM tenants WHERE id = ?", [id])));
 });
 
-app.delete("/api/tenants/:id", async (req, res) => {
+app.delete("/api/tenants/:id", requireWrite, async (req, res) => {
   const { id } = req.params;
   const info = await run("DELETE FROM tenants WHERE id = ?", [id]);
   if (info.changes === 0) return res.status(404).json({ error: "Tenant not found" });
@@ -286,7 +264,7 @@ app.delete("/api/tenants/:id", async (req, res) => {
 // ---------------------------------------------------------------------------
 // Routes: Payments
 // ---------------------------------------------------------------------------
-app.post("/api/payments/:paymentId/pay", async (req, res) => {
+app.post("/api/payments/:paymentId/pay", requireWrite, async (req, res) => {
   const { paymentId } = req.params;
   const { amount } = req.body;
   const payment = await get("SELECT * FROM payments WHERE id = ?", [paymentId]);
@@ -307,7 +285,7 @@ app.get("/api/tenants/:id/history", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Dashboard summary
+// Dashboard summary (read-only, open to any logged-in user)
 // ---------------------------------------------------------------------------
 app.get("/api/dashboard", async (req, res) => {
   await ensureAllCyclesIfNeeded();
