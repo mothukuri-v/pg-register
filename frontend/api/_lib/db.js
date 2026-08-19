@@ -66,7 +66,7 @@ if (userCount === 0) {
     sql: "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')",
     args: ["admin", hash],
   });
-  console.log('Seeded default login -> username: "admin"  password: "admin123" );
+  console.log('Seeded default login -> username: "admin"  password: "admin123" ');
 }
 
 // Seed a read-only account, if it doesn't exist yet — separately from the
@@ -79,7 +79,7 @@ if (viewerExists.rows.length === 0) {
     sql: "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'viewer')",
     args: ["viewer", hash],
   });
-  console.log('Seeded read-only login -> username: "viewer"  password: "viewer123" );
+  console.log('Seeded read-only login -> username: "viewer"  password: "viewer123" ');
 }
 
 export default db;
