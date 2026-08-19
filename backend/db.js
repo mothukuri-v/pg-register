@@ -60,7 +60,7 @@ if (userCount === 0) {
     sql: "INSERT INTO users (username, password_hash) VALUES (?, ?)",
     args: ["admin", hash],
   });
-  console.log('Seeded default login -> username: "admin"  password: "admin123" ' );
+  console.log('Seeded default login -> username: "admin"  password: "admin123"  );
 }
 
 export default db;
